@@ -1,7 +1,7 @@
 from problem_generation import convert_to_graph, generate_disease_dict, generate_targets, filter_diseases, generate_problem
 from Scoring import calculate_zscores, bf_get_best_therapy, score_therapy
 from DWave_Hardware import get_qubo_from_problem, get_DWaveSampler_Best_Therapy
-
+import numpy as np
 #Load data here
 
 #diseases = 
