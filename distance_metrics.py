@@ -1,8 +1,15 @@
 import numpy as np
 import networkx as nx
 from collections import defaultdict
+import random as random
+from typing import List, Tuple, Dict
+import pandas as pd
 
-def precompute_apsp(G):
+
+def precompute_apsp(G: nx.Graph) -> Tuple[np.ndarray, List, Dict]:
+    """
+    Precompute all-pairs shortest-path distances for graph G.
+    """
     nodes = list(G.nodes)
     node_to_idx = {node: i for i, node in enumerate(nodes)}
     n_nodes = len(nodes)
@@ -21,7 +28,19 @@ def precompute_apsp(G):
     
     return dist_matrix, nodes, node_to_idx
 
-def calculate_zscores_vectorized(G, Xs, Y, dist_matrix, nodes, node_to_idx, num_samples=300):
+def calculate_zscores_vectorized(
+    G,
+    Xs: List[List],
+    Y: List,
+    dist_matrix: np.ndarray,
+    nodes: List,
+    node_to_idx: Dict,
+    num_samples: int = 2000
+) -> Dict[int, float]:
+    """
+    Compute z-scores for each drug X in Xs relative to Y using degree-preserving
+    random sampling. Returns a dict mapping each X index to its z-score.
+    """
     n_nodes = len(nodes)
 
     Y_indices = np.array([node_to_idx[y] for y in Y if y in node_to_idx])
@@ -59,8 +78,17 @@ def calculate_zscores_vectorized(G, Xs, Y, dist_matrix, nodes, node_to_idx, num_
     
     return z_scores
 
-def calculate_s_matrix(Xs, Y, dist_matrix, nodes, node_to_idx):
-    
+def calculate_s_matrix(
+    Xs: List[List],
+    Y: List,
+    dist_matrix: np.ndarray,
+    nodes: List,
+    node_to_idx: Dict
+) -> np.ndarray:
+    """
+    Compute the topological separation measure s_{ij} for a drug set Xs relative to Y using its mean shortest distances.
+    Returns an (n x n) symmetric matrix with zeros on the diagonal.
+    """    
     Y_indices = np.array([node_to_idx[y] for y in Y if y in node_to_idx])
     Xs_indices = [np.array([node_to_idx[x] for x in X if x in node_to_idx]) for X in Xs]
 
@@ -82,13 +110,20 @@ def calculate_s_matrix(Xs, Y, dist_matrix, nodes, node_to_idx):
     
     return s_matrix
 
-def compute_mean_distance(src_indices, tgt_indices, dist_matrix):
+def compute_mean_distance(src_indices, tgt_indices, dist_matrix: np.ndarray) -> float:
+    """
+    Compute mean of pairwise distances between source indices and target indices using the precomputed distances matrix.
+    Returns 0.0 if there are no finite distances.
+    """
     mask = np.ix_(src_indices, tgt_indices)
     distances = dist_matrix[mask]
     valid = np.isfinite(distances)
     return distances[valid].mean() if valid.any() else 0.0
 
-def compute_mean_intra_distance(indices, dist_matrix):
+def compute_mean_intra_distance(indices, dist_matrix: np.ndarray) -> float:
+    """
+    Compute mean pairwise distance among indices. Returns 0.0 for <2 indices.
+    """
     if len(indices) < 2:
         return 0.0
     rows, cols = np.triu_indices(len(indices), k=1)
@@ -96,39 +131,62 @@ def compute_mean_intra_distance(indices, dist_matrix):
     valid = np.isfinite(distances)
     return distances[valid].mean() if valid.any() else 0.0
 
+def analyze_disease_with_padding(
+    disease_name: str,
+    df: pd.DataFrame,
+    interactome_graph,
+    filtered_disease_dict: dict,
+    drug_to_targets: dict,
+    dist_matrix: np.ndarray,
+    nodes: list,
+    node_to_idx: dict,
+    initial_drug_ids: List[str],
+    num_qubits: int,
+    num_samples: int = 2000
+) -> Tuple[List[str], Dict[str, float], np.ndarray, List[str]]:
+    """
+    Pads `initial_drug_ids` to length `num_qubits` with other random drugs,
+    then computes Z-scores and s-matrix for exactly `num_qubits` drugs.
+    """
 
-def generate_hard_problem(interactome_graph, filtered_disease_dict, drug_to_targets,
-                            dist_matrix, nodes, node_to_idx, num_samples=300):
-    disease_ids = list(filtered_disease_dict.keys())
-    disease_id = np.random.choice(disease_ids)
-    Y = [y for y in filtered_disease_dict[disease_id] if y in node_to_idx]
-    
-    if not Y: 
-        return disease_id, {}, np.array([]), []
-    
-    drug_ids = list(drug_to_targets.keys())
+    base_drugs = [did for did in initial_drug_ids if did in drug_to_targets]
+    if len(base_drugs) > num_qubits:
+        base_drugs = base_drugs[:num_qubits]
+    elif len(base_drugs) < num_qubits:
+        candidates = [did for did in drug_to_targets if did not in base_drugs]
+        needed = num_qubits - len(base_drugs)
+        if len(candidates) < needed:
+            raise ValueError(
+                f"Not enough extra drugs: need {needed}, have {len(candidates)}"
+            )
+        base_drugs += random.sample(candidates, needed)
+
+    drug_ids = base_drugs  
+
     Xs = [[x for x in drug_to_targets[did] if x in node_to_idx] for did in drug_ids]
-    
-    valid_drug_mask = [len(x) > 0 for x in Xs]
-    valid_drug_ids = [did for did, valid in zip(drug_ids, valid_drug_mask) if valid]
-    Xs = [x for x in Xs if len(x) > 0]
-    
-    if not Xs:  
-        return disease_id, {}, np.array([]), []
-    
-    try:
-        z_scores = calculate_zscores_vectorized(
-            G=interactome_graph,
-            Xs=Xs,
-            Y=Y,
-            dist_matrix=dist_matrix,
-            nodes=nodes,
-            node_to_idx=node_to_idx,
-            num_samples=num_samples
-        )
-    except KeyError as Erro:
-        raise RuntimeError(f"Missing node in graph: {Erro}") from Erro
-    
+
+    matches = df[df['Disease Name'] == disease_name]['Disease ID'].unique().tolist()
+    if not matches:
+        raise ValueError(f"Disease '{disease_name}' not found in DF")
+    disease_id = matches[0]
+    Y = [y for y in filtered_disease_dict.get(disease_id, []) if y in node_to_idx]
+
+    raw_z = calculate_zscores_vectorized(
+        G=interactome_graph,
+        Xs=Xs,
+        Y=Y,
+        dist_matrix=dist_matrix,
+        nodes=nodes,
+        node_to_idx=node_to_idx,
+        num_samples=num_samples
+    )
+
+    if isinstance(raw_z, dict):
+        z_scores = np.array([raw_z[i] for i in range(len(drug_ids))])
+    else:
+        z_scores = np.array(raw_z)
+    z_dict = {did: float(z_scores[i]) for i, did in enumerate(drug_ids)}
+
     s_matrix = calculate_s_matrix(
         Xs=Xs,
         Y=Y,
@@ -136,31 +194,5 @@ def generate_hard_problem(interactome_graph, filtered_disease_dict, drug_to_targ
         nodes=nodes,
         node_to_idx=node_to_idx
     )
-    
-    negative_indices = [i for i in z_scores if z_scores[i] < 0]
-    filtered_z = {valid_drug_ids[i]: z_scores[i] for i in negative_indices}
-    filtered_drug_ids = [valid_drug_ids[i] for i in negative_indices]
-    
-    if filtered_drug_ids:
-        filtered_s = s_matrix[np.ix_(negative_indices, negative_indices)]
-    else:
-        filtered_s = np.array([])
-    
-    return disease_id, filtered_z, filtered_s, filtered_drug_ids
 
-#-----------------------//----------------------#
-# Example Usage
-
-dist_matrix, nodes, node_to_idx = precompute_apsp(interactome_graph)
-
-disease_id, z_dict, s_mat, drug_ids = generate_hard_problem(
-    interactome_graph,
-    filtered_disease_dict,
-    drug_to_targets,
-    dist_matrix,
-    nodes,
-    node_to_idx
-)
-
-print(f"Analyzed disease: {disease_id}")
-print(f"Negative z-scores found: {len(z_dict)}")
+    return disease_name, z_dict, s_matrix, drug_ids
