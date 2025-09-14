@@ -583,15 +583,13 @@ def plot_adiabatic_time_scaling(
     lower_band = Tgeom * np.exp(-log_std)
     upper_band = Tgeom * np.exp(+log_std)
 
-    # Modified model: no prefactor C
     def model(n_val, alpha, B):
         return (2.0 ** (alpha * n_val)) + B
     
-    # Initial guess for alpha, B
     log2T = np.log2(Tgeom)
     A = np.vstack([sizes, np.ones_like(sizes)]).T
     sol, *_ = np.linalg.lstsq(A, log2T, rcond=None)
-    alpha0, log2C0 = float(sol[0]), float(sol[1])   # C is ignored now
+    alpha0, log2C0 = float(sol[0]), float(sol[1])  
     B0 = max(0.0, 0.1 * np.min(Tgeom))
     p0 = [alpha0, B0]
     lower = [-10.0, 0.0]
@@ -605,7 +603,7 @@ def plot_adiabatic_time_scaling(
     ss_tot = np.sum((Tgeom - np.mean(Tgeom)) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
 
-    fit_result = {'method': 'scipy_curve_fit_geom_2alphaB', 'alpha': alpha_fit, 'B': B_fit, 'cov': pcov, 'r2': r2}
+    fit_result = {'method': 'scipy_curve_fit', 'alpha': alpha_fit, 'B': B_fit, 'cov': pcov, 'r2': r2}
 
     fig, ax = plt.subplots(figsize=figsize)
     rng = np.random.RandomState(2)
