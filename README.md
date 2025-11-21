@@ -1,2 +1,1 @@
-# Drug-Combinations-using-Quantum-Annealers
-Currently in Development
+Network-based prediction of drug combinations with quantum annealing
