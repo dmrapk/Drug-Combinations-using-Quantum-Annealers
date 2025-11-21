@@ -9,6 +9,12 @@ from dimod.reference.samplers import ExactSolver
 from dimod import BinaryQuadraticModel
 from tqdm import tqdm
 import os
+import json
+import gzip
+from pathlib import Path
+from typing import Dict, Tuple, Iterable, Union, List, Optional
+
+QUBO = Dict[Tuple[int, int], float]
 
 def create_qubo(
     z_base: np.ndarray,
@@ -19,7 +25,7 @@ def create_qubo(
     penalty_strength: float | None = None
 ) -> dict[tuple[int,int], float]:
     """
-    Build a QUBO with an optional constraint that the number of '1'-bits p
+    Build a QUBO with an optional constraint that the combination size
     lies in allowed_sizes (e.g. [2,3]).  If allowed_sizes is None or empty,
     no cardinality constraint is added.
 
@@ -268,6 +274,83 @@ def plot_metric_results(metric_matrices, gamma_values, beta_values, disease_name
     plt.show()
 
 
+def optimize_for_ap(
+    disease_name: str,
+    df: "pd.DataFrame",
+    interactome_graph,
+    filtered_disease_dict: dict,
+    drug_to_targets: dict,
+    dist_matrix: np.ndarray,
+    nodes: list,
+    node_to_idx: dict,
+    num_qubits: int,
+    gamma_values: List[float],
+    beta_values: List[float],
+    initial_drug_ids: Optional[List[str]] = None,
+    num_trials: int = 1,
+    num_samples: int = 2000,
+) -> Tuple[
+    Optional[List[str]],
+    float,
+    Optional[np.ndarray],
+    Optional[float],
+    Optional[float],
+    dict,
+]:
+    """
+    Optimize for average-precision (AP) metric over gamma/beta grid.
+    """
+    if initial_drug_ids is None:
+        initial_drug_ids = []
+
+    gt_combinations = get_ground_truth_combinations(disease_name, df)
+
+    best_ap_score = 0.0
+    best_ap_drug_ids = None
+    best_ap_qubo = None
+    best_ap_gamma = None
+    best_ap_beta = None
+
+    ap_matrix = np.full((len(gamma_values), len(beta_values)), np.nan, dtype=float)
+    metric_matrices = {'ap': ap_matrix}
+
+    for trial in range(num_trials):
+        _, z_dict, s_matrix, drug_ids = analyze_disease_with_padding(
+            disease_name, df, interactome_graph, filtered_disease_dict,
+            drug_to_targets, dist_matrix, nodes, node_to_idx, initial_drug_ids,
+            num_qubits, num_samples=num_samples
+        )
+        print(f"Selected drugs: {drug_ids}")
+        z_base = np.array([z_dict[did] for did in drug_ids])
+
+        for i, gamma in enumerate(gamma_values):
+            for j, beta in enumerate(beta_values):
+                qubo = create_qubo(z_base, s_matrix, gamma, beta, [2, 3])
+
+                ap, _ = compute_qubo_metrics(qubo, drug_ids, gt_combinations)
+
+                metric_matrices['ap'][i, j] = float(ap)
+
+                if ap > best_ap_score:
+                    best_ap_score = float(ap)
+                    best_ap_drug_ids = list(drug_ids)
+                    best_ap_qubo = qubo
+                    best_ap_gamma = gamma
+                    best_ap_beta = beta
+
+    fig, ax = plot_ap_landscape(metric_matrices, gamma_values, beta_values, disease_name=disease_name)
+
+    return (
+        best_ap_drug_ids,
+        best_ap_score,
+        best_ap_qubo,
+        best_ap_gamma,
+        best_ap_beta,
+        metric_matrices,
+        fig,
+        ax,
+    )
+
 def plot_ap_landscape(
     metric_matrices: dict,
     gamma_values: list,
@@ -289,8 +372,6 @@ def plot_ap_landscape(
         return np.concatenate(([left], mids, [right]))
 
     ap_grid = np.asarray(metric_matrices['ap'], dtype=float)
-    if ap_grid.ndim != 2 or ap_grid.shape != (len(gamma_values), len(beta_values)):
-        raise ValueError("metric_matrices['ap'] must have shape (len(gamma_values), len(beta_values)).")
 
     beta_edges = _edges_from_centers(np.asarray(beta_values))
     gamma_edges = _edges_from_centers(np.asarray(gamma_values))
@@ -301,16 +382,24 @@ def plot_ap_landscape(
         "font.family": "sans-serif",
         "font.size": 12,
         "axes.titlesize": 14,
-        "axes.labelsize": 12,
+        "axes.labelsize": 16,  
         "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "figure.dpi": 150
+        "xtick.labelsize": 14,  
+        "ytick.labelsize": 14,
+        "figure.dpi": 150,
+        "svg.fonttype": "none"  
     })
+
+    try:
+        from scipy.ndimage import gaussian_filter
+        ap_plot_grid = gaussian_filter(ap_grid, sigma=1.0)
+    except Exception:
+        ap_plot_grid = ap_grid.copy()
+
     pcm = ax.pcolormesh(
         beta_edges,
         gamma_edges,
-        ap_grid,
+        ap_plot_grid,
         shading='auto',
         cmap=cmap,
         vmin=vmin,
@@ -318,22 +407,23 @@ def plot_ap_landscape(
     )
 
     cb = fig.colorbar(pcm, ax=ax, pad=0.02, fraction=0.046)
-    cb.set_label('Average Precision (AP)', fontsize=11)
-    cb.ax.tick_params(labelsize=10)
+
+    cb.set_label('')
+    cb.ax.tick_params(labelsize=14)
 
     b_centers, g_centers = np.meshgrid(beta_values, gamma_values)
-    contour_levels = np.linspace(np.nanmax([vmin, ap_grid.min()]), np.nanmin([vmax, ap_grid.max()]), 6)
+    contour_levels = np.linspace(np.nanmax([vmin, ap_plot_grid.min()]), np.nanmin([vmax, ap_plot_grid.max()]), 6)
     try:
         cs = ax.contour(
             b_centers,
             g_centers,
-            ap_grid,
+            ap_plot_grid,
             levels=contour_levels,
             colors='white',
             linewidths=0.8,
             alpha=0.6
         )
-        ax.clabel(cs, fmt="%.2f", fontsize=9, colors='white')
+        ax.clabel(cs, fmt="%.2f", fontsize=12, colors='white')
     except Exception:
         pass
 
@@ -344,29 +434,20 @@ def plot_ap_landscape(
     best_ap = float(ap_grid[best_i, best_j])
     buffer = 0.03 * (np.max(gamma_edges) - np.min(gamma_edges))
     ax.scatter([best_beta], [best_gamma], color='red', s=80, edgecolor='black', linewidth=0.8, zorder=10)
-    ax.text(
-        np.max(gamma_edges)-buffer, np.max(beta_edges)-buffer,
-        f' Best AP={best_ap:.2f}\n  $(\\beta*,\\gamma*)$=({best_beta:.2f},{best_gamma:.2f})',
-        color='black',
-        fontsize=9,
-        va='top',
-        ha='right',
-        bbox=dict(facecolor='white', alpha=0.8, edgecolor='black',linewidth=1.2, boxstyle='round,pad=0.4'),
-        zorder=11
-    )
 
-    ax.set_xlabel('$\\beta$', fontsize=12)
-    ax.set_ylabel('$\\gamma$', fontsize=12)
-    ax.set_title(f'Average Precision Landscape — {disease_name}', fontsize=13, pad=8)
+    ax.set_xlabel('$\\beta$', fontsize=16)
+    ax.set_ylabel('$\\gamma$', fontsize=16)
+
     ax.set_xlim(beta_edges[0], beta_edges[-1])
     ax.set_ylim(gamma_edges[0], gamma_edges[-1])
-    ax.tick_params(axis='both', which='major', labelsize=10)
+    ax.tick_params(axis='both', which='major', labelsize=14)
 
     ax.set_aspect('auto')
     ax.grid(False)
 
     plt.tight_layout()
     return fig, ax
+
 
 def get_exact_low_energy_states(
     qubo: dict,
@@ -419,24 +500,19 @@ def plot_energy_spectrum(
 ):
     """
     Plot energy spectrum with color-coded match status.
-    
-    Args:
-        sorted_results: List of (combination, energy, is_match)
-        top_n: Number of solutions to plot
-        disease_name: For plot title
-        figsize: Figure dimensions
     """
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.size": 12,
-        "axes.titlesize": 14,
-        "axes.labelsize": 12,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "figure.dpi": 150
+        "font.size": 20,          
+        "axes.titlesize": 20,
+        "axes.labelsize": 20,
+        "legend.fontsize": 15,
+        "xtick.labelsize": 22,
+        "ytick.labelsize": 22,
+        "figure.dpi": 300
     })
 
+    top_n = min(top_n, len(sorted_results))
     top_results = sorted_results[:top_n]
     energies = [res[1] for res in top_results]
     is_match = [res[2] for res in top_results]
@@ -444,83 +520,93 @@ def plot_energy_spectrum(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    energy_min = min(energies)
-    energy_max = max(energies)
+    energy_min = min(energies) if energies else 0.0
+    energy_max = max(energies) if energies else 1.0
     energy_range = max(1e-8, (energy_max - energy_min))
 
-    x_lim_left = energy_min - 0.32 * energy_range
-    x_lim_right = energy_max + 0.15 * energy_range
+    pad_left = 0.18 * energy_range
+    pad_right = 0.12 * energy_range   
+    x_lim_left = energy_min - pad_left
+    x_lim_right = energy_max + pad_right
 
-    combo_text_x = x_lim_left + 0.01 * energy_range
-    x_line_start = combo_text_x + 0.04 * energy_range
+    x_line_start = x_lim_left + 0.03 * energy_range
 
     for i, (energy, match) in enumerate(zip(energies, is_match)):
-        color = '#4CAF50' if match else '#F44336'
+        color = '#2ca02c' if match else '#d62728'
         ax.hlines(y=i, xmin=x_line_start, xmax=energy,
-                  colors=color, linewidth=3, alpha=0.9, zorder=1)
-        ax.scatter(energy, i, color=color, s=110, zorder=10, edgecolor='k', linewidth=0.5)
-
-        dx = 0.01 * energy_range
-        desired_x = energy + dx
-        if desired_x > (x_lim_right - 0.01 * energy_range):
+                  colors=color, linewidth=3.0, alpha=0.95, zorder=2)
+        ax.scatter(energy, i, color=color, s=150, zorder=4,
+                   edgecolor='black', linewidth=0.6)
+        '''
+        dx = 0.015 * energy_range
+        text_margin = 0.008 * energy_range
+        if energy + dx + text_margin > (x_lim_right - 0.02 * energy_range):
             text_x = energy - dx
             ha = 'right'
         else:
-            text_x = desired_x
+            text_x = energy + dx
             ha = 'left'
-        ax.text(text_x, i, f"{energy:.3f}", ha=ha, va='center', fontsize=10, fontweight='bold', zorder=11)
 
-        combo_str = ", ".join(sorted(combinations[i])) if combinations[i] else "[]"
-        ax.text(combo_text_x, i, combo_str,
-                ha='left', va='center', fontsize=7,
-                bbox=dict(facecolor='white', alpha=0.98, edgecolor='none', pad=2),
-                zorder=5, clip_on=False)
-
+        ax.text(text_x, i, f"{energy:.2f}", ha=ha, va='center',
+                fontsize=15, fontweight='bold', zorder=6,
+                bbox=dict(facecolor='white', alpha=0.9, edgecolor='none', pad=0.6),
+                clip_on=False)
+        '''
     ax.set_yticks(range(len(top_results)))
-    ax.set_yticklabels([f"{i+1}" for i in range(len(top_results))])
-    ax.yaxis.tick_right()
-    ax.yaxis.set_label_position("right")
-    ax.tick_params(axis='y', labelright=True, labelleft=False)
+    ax.set_yticklabels([f"{i+1}" for i in range(len(top_results))], fontsize=21)
+    ax.yaxis.tick_left()
+    ax.yaxis.set_label_position("left")
+    ax.tick_params(axis='y', labelleft=True, labelright=False)
 
-    ax.set_xlabel('Energy', fontsize=12)
-    ax.set_ylabel('Solution Rank', fontsize=12)
-    ax.set_title(f'Top {len(top_results)} Solutions for {disease_name}', fontsize=14)
+    ax.set_xlabel('Energy', fontsize=28)
+    ax.set_ylabel('Solution rank', fontsize=28)
 
     ax.set_xlim(x_lim_left, x_lim_right)
 
-    legend_elements = [
-        Patch(facecolor='#4CAF50', label='Match with Dataset'),
-        Patch(facecolor='#F44336', label='No Match')
+    from matplotlib.lines import Line2D
+    legend_handles = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#2ca02c',
+               markeredgecolor='k', markersize=12, label='Match with dataset'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='#d62728',
+               markeredgecolor='k', markersize=12, label='No match')
     ]
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=10)
-    ax.grid(axis='x', linestyle='--', alpha=0.35)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.tight_layout()
+    leg = ax.legend(handles=legend_handles, loc='lower right', frameon=True, fontsize=20)
+    leg.get_frame().set_facecolor('white')
+    leg.get_frame().set_edgecolor('black')
+    leg.get_frame().set_alpha(0.95)
 
-    plt.show()
-    plt.close(fig)
+    ax.grid(axis='x', linestyle='--', alpha=0.35)
+
+    ax.spines['left'].set_visible(True)
+    ax.spines['left'].set_linewidth(1.2)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    fig.tight_layout()
     return fig
 
 
 def plot_and_compute_precision_recall_curve(
-    sorted_results: list[tuple[list[str], float, bool]],
-    gt_combinations: set[frozenset],
-    disease_name: str = "",
-    figsize: tuple = (7.5, 6)
+    sorted_results,
+    gt_combinations,
+    disease_name="",
+    figsize=(5.5, 4.5),
+    dpi=300,
+    annotate_ap_inplot=True,
+    draw_step=False
 ):
-    """
+    """ 
     Plot precision-recall curve and compute average precision (AP). 
     """
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.size": 12,
-        "axes.titlesize": 14,
-        "axes.labelsize": 12,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "figure.dpi": 150
+        "font.size": 10,
+        "axes.titlesize": 11,
+        "axes.labelsize": 11,
+        "legend.fontsize": 9,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "figure.dpi": dpi
     })
 
     drug_set = set()
@@ -530,48 +616,97 @@ def plot_and_compute_precision_recall_curve(
     total_gt = len(relevant_gt)
 
     matches = np.array([match for _, _, match in sorted_results], dtype=int)
+
     cumulative_tp = np.cumsum(matches)
     cumulative_fp = np.cumsum(1 - matches)
-
     denom = (cumulative_tp + cumulative_fp).astype(float)
     precision = np.divide(cumulative_tp, denom, out=np.zeros_like(denom, dtype=float), where=denom != 0)
-    recall = cumulative_tp / float(total_gt) if total_gt > 0 else np.zeros(len(matches), dtype=float)
+    total_pos_in_results = int(cumulative_tp[-1]) if len(cumulative_tp) > 0 else 0
+    recall = cumulative_tp / float(total_pos_in_results) if total_pos_in_results > 0 else np.zeros_like(precision)
+
+    print(f"Total relevant ground truth combinations: {total_gt}")
 
     ap = 0.0
-    prev_recall = 0.0
-    for i in range(len(precision)):
-        ap += precision[i] * (recall[i] - prev_recall)
-        prev_recall = recall[i]
+    prev_r = 0.0
+    for p_i, r_i in zip(precision, recall):
+        ap += float(p_i) * (r_i - prev_r)
+        prev_r = r_i
 
     fig, ax = plt.subplots(figsize=figsize)
-    ax.plot(recall, precision, '-', lw=2.5, label=f'Precision-Recall (AP = {ap:.3f})', zorder=3)
-    ax.set_xlabel('Recall', fontsize=12)
-    ax.set_ylabel('Precision', fontsize=12)
-    ax.set_title(f'Precision-Recall Curve: {disease_name}\n'
-                 f'({total_gt} Ground Truth Combinations)', fontsize=14)
+    if draw_step:
+        ax.plot(recall, precision, drawstyle='steps-post', lw=2.2, zorder=3)
+    else:
+        ax.plot(recall, precision, '-', lw=2.2, zorder=3)
 
-    positive_prop = np.mean(matches) if len(matches) > 0 else 0.0
-    ax.axhline(y=positive_prop, color='r', linestyle='--', linewidth=1.2, label='Chance Level', zorder=1)
+    ax.set_xlabel('Recall', fontsize=11)
+    ax.set_ylabel('Precision', fontsize=11)
+    ax.set_xlim(0.0, 1.02)   
+    ax.set_ylim(0.0, 1.02)
+    ax.grid(alpha=0.18, linestyle='--', linewidth=0.6)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
-    ax.set_xlim([0.0, 1.05])
-    ax.set_ylim([0.0, 1.05])
-    ax.grid(alpha=0.18)
-    ax.legend(loc='lower left')
-
-    pos_tp = int(cumulative_tp[-1]) if len(cumulative_tp) > 0 else 0
-    ax.annotate(
-        f'Average Precision: {ap:.3f}\n'
-        f'Positives: {pos_tp}/{len(matches)}\n'
-        f'Recall Range: {recall[0]:.3f}-{recall[-1]:.3f}',
-        xy=(0.98, 0.98), xycoords='axes fraction',
-        ha='right', va='top',
-        bbox=dict(boxstyle="round", fc="white", alpha=0.85),
-        fontsize=10
-    )
+    if annotate_ap_inplot:
+        ax.text(
+            0.95, 0.95, f'AP = {ap:.3f}',
+            transform=ax.transAxes,
+            ha='right', va='top',
+            fontsize=9,
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.7)
+        )
 
     plt.tight_layout()
+    return ap, precision, recall, fig
 
-    plt.show()
-    plt.close(fig)
 
-    return ap, precision, recall,  fig
+def save_qubo_to_file(qubo: QUBO, filename: Union[str, Path], compress: bool = False) -> None:
+    """
+    Saves a QUBO dict[(i,j), float] to a JSON file.
+    """
+    filename = Path(filename)
+    if qubo:
+        max_idx = max(max(i, j) for (i, j) in qubo.keys())
+        M = int(max_idx) + 1
+    else:
+        M = 0
+
+    entries = [[int(i), int(j), float(v)] for (i, j), v in qubo.items()]
+
+    payload = {"M": M, "entries": entries}
+
+    do_gzip = compress or filename.suffix == ".gz"
+
+    if do_gzip:
+        with gzip.open(filename, "wt", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    else:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def load_qubo_from_file(filename: Union[str, Path]) -> QUBO:
+    """
+    Reads a QUBO saved by `save_qubo_to_file` and returns dict[(i,j), float].
+    """
+    filename = Path(filename)
+    do_gzip = filename.suffix == ".gz"
+
+    if do_gzip:
+        with gzip.open(filename, "rt", encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        with open(filename, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+    if not isinstance(payload, dict) or "entries" not in payload:
+        raise ValueError("File does not contain expected qubo payload (missing 'entries').")
+
+    entries = payload["entries"]
+    qubo: QUBO = {}
+    for triple in entries:
+        if not (isinstance(triple, list) or isinstance(triple, tuple)) or len(triple) != 3:
+            raise ValueError("Each entry must be a 3-element list [i, j, value].")
+        i, j, v = triple
+        qubo[(int(i), int(j))] = float(v)
+
+    return qubo

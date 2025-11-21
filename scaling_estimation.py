@@ -1,7 +1,7 @@
-from typing import Dict, List, Tuple, Any, Union, Optional
+from typing import Dict, List, Tuple, Any, Union, Optional, Sequence
 import time
 import numpy as np
-from math import comb
+from math import comb, ceil, isfinite
 import dimod
 import itertools
 from dimod import SimulatedAnnealingSampler, ExactSolver
@@ -13,6 +13,8 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import scipy.linalg as sla
 import warnings
+from matplotlib.ticker import MaxNLocator, LogFormatterMathtext
+import os
 
 def _qubo_to_diagonal_HP(qubo: Dict[Tuple[int,int], float]) -> Tuple[sp.csr_matrix, int]:
     """
@@ -151,37 +153,90 @@ def plot_homotopy_eigenvalues(
     n_refine: int = 301
 ) -> Tuple[Any, Any]:
     """
-    Plot the lowest k eigenvalues λ_j(s) of H(s) = (1-s) H_B + s H_P for s∈[0,1].
-    Automatically locate the minimum ground/first-excited gap and include a zoom around the minimum.
+    Plot the lowest k eigenvalues λ_j(s) of H(s) = (1-s) H_B + s H_P for s∈[0,1] with a zoom inset.
     """
 
-    s_vals, eigs_out, n = compute_homotopy_spectrum(qubo, normalize=normalize, num_s=num_s, k_lowest=k_lowest, gamma=gamma)
+    s_vals, eigs_out, n = compute_homotopy_spectrum(
+        qubo, normalize=normalize, num_s=num_s, k_lowest=k_lowest, gamma=gamma
+    )
     if eigs_out.shape[1] < 2:
-        raise RuntimeError("Need at least two eigenvalues to compute a gap.")
+        raise RuntimeError("Need at least two eigenvalues to compute a gap (k_lowest >= 2).")
+
     gaps = eigs_out[:, 1] - eigs_out[:, 0]
     min_idx = int(np.argmin(gaps))
     s_min = float(s_vals[min_idx])
     gap_min = float(gaps[min_idx])
 
-    fig, ax = plt.subplots(figsize=figsize)
-    for j in range(eigs_out.shape[1]):
-        ax.plot(s_vals, eigs_out[:, j], label=f'λ_{j}')
-    ax.plot(s_vals, eigs_out[:, 0], color='C0', lw=2)
-    ax.set_xlabel('s (annealing parameter)')
-    ax.set_ylabel('Eigenvalue')
-    ax.set_title(f'Homotopy spectrum (n={n}, normalize={normalize}) — min Δ≈{gap_min:.3e} at s={s_min:.4f}')
-    ax.grid(alpha=0.25)
-    ax.axvline(s_min, color='k', ls='--', alpha=0.6)
-    ax.annotate(f's*={s_min:.4f}\nΔ={gap_min:.3e}', xy=(s_min, (eigs_out[min_idx, 0] + eigs_out[min_idx, 1]) / 2),
-                xytext=(min(1.0, s_min + 0.05), eigs_out[min_idx, 0]),
-                arrowprops=dict(arrowstyle='->', lw=1.2), bbox=dict(fc='white', alpha=0.8))
+    plt.rcParams.update({
+        "font.size": 11,
+        "font.family": "sans-serif",
+        "figure.dpi": 150,
+        "axes.grid": True
+    })
 
-    left = max(0.0, s_min - zoom_halfwidth)
-    right = min(1.0, s_min + zoom_halfwidth)
-    if right - left < 1e-12:
-        left = max(0.0, s_min - max(1e-6, zoom_halfwidth))
-        right = min(1.0, s_min + max(1e-6, zoom_halfwidth))
-    s_ref = np.linspace(left, right, max(3, int(n_refine)))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    palette = plt.get_cmap("tab10")
+    lw_primary = 2.2
+    lw_secondary = 1.0
+    alpha_secondary = 0.5
+
+    k_available = eigs_out.shape[1]
+    s_vals = np.asarray(s_vals, dtype=float)
+
+    for j in range(k_available):
+        if j == 0:
+            ax.plot(s_vals, eigs_out[:, j], color=palette(0), lw=lw_primary, label=r'$\lambda_0$ (ground state)')
+        elif j == 1:
+            ax.plot(s_vals, eigs_out[:, j], color=palette(1), lw=lw_primary, label=r'$\lambda_1$ (1st excited state)')
+        else:
+            ax.plot(s_vals, eigs_out[:, j], color='gray', lw=lw_secondary, alpha=alpha_secondary)
+
+    ax.axvline(s_min, color='k', ls='--', lw=1.0, alpha=0.7)
+    ax.scatter([s_min], [eigs_out[min_idx, 0]], color=palette(0), edgecolor='k', zorder=5, s=36)
+    ax.scatter([s_min], [eigs_out[min_idx, 1]], color=palette(1), edgecolor='k', zorder=5, s=36)
+
+    ax.set_xlabel('s', fontsize=12)
+    ax.set_ylabel('Energy Eigenvalues (s)', fontsize=12)
+
+    if normalize:
+        ax.set_title(
+            f'Normalized Homotopy spectrum (n={n})',
+            fontsize=12
+        )
+    else:
+        ax.set_title(
+            f'Homotopy spectrum (n={n})',
+            fontsize=12
+        )
+
+    coarse_ymin = float(np.nanmin(eigs_out[:, :min(6, eigs_out.shape[1])]))
+    coarse_ymax = float(np.nanmax(eigs_out[:, :min(6, eigs_out.shape[1])]))
+    coarse_span = max(1e-12, coarse_ymax - coarse_ymin)
+
+    text_offset = max(1e-8, 0.18 * coarse_span)
+
+    y_mid = 0.5 * (eigs_out[min_idx, 0] + eigs_out[min_idx, 1])
+
+    xy = (s_min, y_mid)
+    xytext = (s_min, y_mid - text_offset)
+    ax.annotate(
+        f's* = {s_min:.4f}\nΔ = {gap_min:.3e}',
+        xy=xy,
+        xytext=xytext,
+        ha='center', va='top', 
+        arrowprops=dict(arrowstyle='->', lw=1.2, alpha=0.9),
+        bbox=dict(fc='white', alpha=0.9, boxstyle='round,pad=0.3'),
+        fontsize=10
+    )
+
+    left = max(0.0, s_min - float(zoom_halfwidth))
+    right = min(1.0, s_min + float(zoom_halfwidth))
+    if right - left < 1e-8:
+        left = max(0.0, s_min - 1e-3)
+        right = min(1.0, s_min + 1e-3)
+    s_ref = np.linspace(left, right, max(5, int(n_refine)))
+
     HP, _ = _qubo_to_diagonal_HP(qubo)
     HB = _build_transverse_field_HB(n, gamma=gamma)
     if sp.issparse(HP):
@@ -191,41 +246,73 @@ def plot_homotopy_eigenvalues(
     HP = np.asarray(HP, dtype=float)
     HB = np.asarray(HB, dtype=float)
 
-    k = eigs_out.shape[1]
-    eigs_ref = np.zeros((len(s_ref), k), dtype=float)
+    if normalize:
+        diag_HP = np.diag(HP)
+        max_abs = float(np.max(np.abs(diag_HP))) if diag_HP.size else 1.0
+        if max_abs == 0:
+            max_abs = 1.0
+        HP = HP / max_abs
+
+    k = min(k_lowest, eigs_out.shape[1])
+    eigs_ref = np.full((len(s_ref), k), np.nan, dtype=float)
     for ii, s in enumerate(s_ref):
         Hs_ref = (1.0 - float(s)) * HB + float(s) * HP
         vals = sla.eigvalsh(Hs_ref)
-        eigs_ref[ii, :min(k, vals.size)] = np.sort(vals)[:k]
+        vals_sorted = np.sort(vals)
+        take = min(k, vals_sorted.size)
+        eigs_ref[ii, :take] = vals_sorted[:take]
 
-    axins = inset_axes(ax, width="42%", height="42%", bbox_to_anchor=(0.56, 0.06, 0.40, 0.40),
-                       bbox_transform=ax.transAxes, loc='lower left', borderpad=0)
-    for j in range(eigs_ref.shape[1]):
-        axins.plot(s_ref, eigs_ref[:, j], lw=1.2)
+    axins = inset_axes(ax, width="40%", height="40%", loc='lower right', borderpad=1.0)
+
+    for j in range(k):
+        if j == 0:
+            axins.plot(s_ref, eigs_ref[:, j], color=palette(0), lw=1.6)
+        elif j == 1:
+            axins.plot(s_ref, eigs_ref[:, j], color=palette(1), lw=1.6)
+        else:
+            axins.plot(s_ref, eigs_ref[:, j], color='gray', lw=0.9, alpha=0.6)
+
     axins.set_xlim(left, right)
-    ymin = float(np.min(eigs_ref[:, :2]))
-    ymax = float(np.max(eigs_ref[:, :2]))
-    if ymax <= ymin:
-        ymin -= 1e-12
-        ymax += 1e-12
-    span = ymax - ymin
-    tighten = 0.12
-    low = ymin + tighten * span
-    high = ymax - tighten * span
-    if low >= high:
-        low = ymin - 0.01 * span
-        high = ymax + 0.01 * span
-    axins.set_ylim(low, high)
-    if (span / max(abs(ymin), 1.0)) < 1e-3:
-        axins.set_yscale('log')
-    axins.tick_params(axis='both', which='major', labelsize=8)
+
+    two_low = eigs_ref[:, :2]
+    finite_mask = np.isfinite(two_low)
+    if finite_mask.any():
+        vals = two_low[finite_mask].flatten()
+        ymin = float(np.nanmin(vals))
+        ymax = float(np.nanmax(vals))
+        if not np.isfinite(ymin) or not np.isfinite(ymax) or ymax <= ymin:
+            ymin = float(eigs_out[min_idx, 0]) - abs(eigs_out[min_idx, 0]) * 0.01 - 1e-8
+            ymax = float(eigs_out[min_idx, 1]) + abs(eigs_out[min_idx, 1]) * 0.01 + 1e-8
+        span = ymax - ymin
+        if span <= 0 or np.isnan(span):
+            mid = 0.5 * (ymin + ymax)
+            span = abs(mid) * 0.02 + 1e-8
+            ymin = mid - span
+            ymax = mid + span
+        margin = max(1e-12, 0.12 * span)
+        axins.set_ylim(ymin - margin, ymax + margin)
+    else:
+        mid = y_mid
+        span = abs(mid) * 0.02 + 1e-8
+        axins.set_ylim(mid - span, mid + span)
+
     axins.set_title('Zoom near min gap', fontsize=9)
-    axins.spines['top'].set_linewidth(0.8)
-    axins.spines['right'].set_linewidth(0.8)
-    axins.spines['bottom'].set_linewidth(0.8)
-    axins.spines['left'].set_linewidth(0.8)
-    ax.legend(loc='upper left')
-    fig.subplots_adjust(bottom=0.11, right=0.975, top=0.90)
+    axins.grid(alpha=0.25)
+    axins.tick_params(axis='x', labelsize=8)
+    axins.tick_params(axis='y', labelsize=8)
+    axins.xaxis.tick_top()
+    axins.xaxis.set_label_position('top')
+
+    axins.xaxis.set_major_locator(MaxNLocator(4))
+    try:
+        mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5", lw=0.8)
+    except Exception:
+        pass
+
+    ax.legend(loc='upper left', fontsize=9, frameon=True)
+    ax.grid(alpha=0.2)
+    fig.subplots_adjust(bottom=0.14, right=0.97, top=0.9)
+
     return fig, ax
 
 
@@ -280,13 +367,41 @@ def extract_qubo_for_indices(Q_full: Dict[Tuple[int,int], float], indices: List[
             Q_new[(ni, nj)] = val
     return Q_new
 
+def normalize_qubo(
+    qubo: Dict[Tuple[int,int], float],
+    in_place: bool = False
+) -> Tuple[Dict[Tuple[int,int], float], float]:
+    """
+    Return a QUBO whose coefficients are divided by the maximum absolute
+    coefficient.
+    """
+    if not qubo:
+        return {}, 0.0
+
+    vals = [v for v in qubo.values() if isinstance(v, (int, float)) and isfinite(v)]
+    if not vals:
+        return (dict(qubo) if not in_place else qubo, 0.0)
+
+    max_abs = max(abs(v) for v in vals)
+    if max_abs == 0:
+        return (dict(qubo) if not in_place else qubo, 0.0)
+
+    if in_place:
+        for k in list(qubo.keys()):
+            qubo[k] = float(qubo[k]) / max_abs
+        return qubo, float(max_abs)
+    else:
+        q_new = {k: float(v) / max_abs for k, v in qubo.items()}
+        return q_new, float(max_abs)
+
+
 def sweep_gap_vs_size(
-    full_qubo: Dict[Tuple[int,int], float],
+    full_qubo: Dict[tuple, float],
     full_drug_ids: List[str],
-    sizes: List[int],
-    sample_per_size: int = 5,
+    sizes: Sequence[int],
+    sample_per_size: Union[int, Dict[int,int], Sequence[int]] = 5,
     allowed_sizes: List[int] = None
-    ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """
     For each n in sizes, choose sample_per_size random subsets of drug indices of size n,
     build a reduced QUBO for that subset (extract corresponding linear/quadratic terms),
@@ -296,25 +411,46 @@ def sweep_gap_vs_size(
     results = []
     n_full = len(full_drug_ids)
 
+    if isinstance(sample_per_size, int):
+        samples_map = {int(n): int(sample_per_size) for n in sizes}
+    elif isinstance(sample_per_size, dict):
+        samples_map = {int(n): int(sample_per_size.get(int(n), 0)) for n in sizes}
+    else:
+        seq = list(sample_per_size)
+        if len(seq) == len(sizes):
+            samples_map = {int(n): int(seq[i]) for i, n in enumerate(sizes)}
+        else:
+            raise ValueError("sample_per_size sequence must have same length as sizes")
+
     for n in sizes:
+        n = int(n)
         if n > n_full:
             continue
-        for s in range(sample_per_size):
+        samples_for_n = int(samples_map.get(n, 0))
+        if samples_for_n <= 0:
+            continue
+
+        for s in range(samples_for_n):
             chosen = sorted(rng.choice(range(n_full), size=n, replace=False).tolist())
-            sub_qubo = extract_qubo_for_indices(full_qubo, chosen)
+
+            unnormalized_sub_qubo = extract_qubo_for_indices(full_qubo, chosen)
+            sub_qubo, max_abs = normalize_qubo(unnormalized_sub_qubo, in_place=False)
+
             sub_ids = [full_drug_ids[i] for i in chosen]
             rec = {'size': n, 'sample': s, 'subset_indices': chosen, 'subset_ids': sub_ids}
             t0 = time.time()
             try:
                 gap_info = estimate_gap(sub_qubo, sub_ids, allowed_sizes=allowed_sizes)
-                rec.update(gap_info)
+                if isinstance(gap_info, dict):
+                    rec.update(gap_info)
+                else:
+                    rec.update({'result': gap_info})
             except Exception as e:
                 rec.update({'error': str(e)})
             t1 = time.time()
             rec['wall_time_total'] = t1 - t0
             results.append(rec)
     return results
-
 
 def estimate_gap(
     qubo: Dict[Tuple[int,int], float],
@@ -361,7 +497,7 @@ def estimate_gap(
             res['method'] = 'exact_enumeration'
             return res
         except Exception as e:
-            print("[Warning] exact enumeration failed, falling back to sampling:", e)
+            print("[Warning] exact enumeration failed", e)
 
 def exact_gap(qubo: Dict[Tuple[int,int], float], drug_ids: List[str]) -> Dict[str, Any]:
     """
@@ -627,3 +763,202 @@ def plot_adiabatic_time_scaling(
     ax.legend()
     plt.tight_layout()
     return fig, ax, fit_result
+
+def estimate_samples_from_qubo(
+    sizes: List[int],
+    max_samples: float = 10000,
+    min_samples: int = 50,
+    ) -> Dict[int, int]:
+    """
+    Simple heuristic estimator of how many samples to draw for each subset size.
+    """
+    samples= np.zeros(len(sizes),dtype=int)
+    original_size = np.max(sizes)
+    for i,size in enumerate(sizes):
+
+        samples_estimate = (original_size-size)/(original_size-sizes[0])* max_samples
+        if samples_estimate < min_samples:
+            samples_estimate = min_samples
+        else:
+            samples_estimate = int(min(max_samples, samples_estimate))
+        samples[i] = int(samples_estimate)
+
+    samples[-1]=1
+
+    return samples
+
+
+def plot_adiabatic_time_estimation(
+    df_res: Union[pd.DataFrame, list],
+    size_col: str = 'size',
+    gap_col: str = 'gap',
+    prefactor: float = 1.0,
+    eps_gap: float = 1e-12,
+    log_base: float = 2.0,
+    figsize: Tuple[float, float] = (11, 4.5),
+    save_path: str | None = None,
+    left_ylim_percentiles: Tuple[float, float] = (1.0, 99.0)
+) -> Tuple[plt.Figure, Tuple[plt.Axes, plt.Axes], Dict[str, Any]]:
+    """
+    PLots a Two-panel figure:
+      - left: boxplot (with no raw points) with geometric mean; y-limits are tightened
+              using percentile clipping but always include whisker extremes.
+      - right: geometric-mean curve with multiplicative bands and fit T(n) = C * 2^(alpha n) + B.
+
+    Returns (fig, (ax_box, ax_fit), meta).
+    """
+
+    df = pd.DataFrame(df_res) if not isinstance(df_res, pd.DataFrame) else df_res.copy()
+    if size_col not in df.columns or gap_col not in df.columns:
+        raise ValueError(f"Data must contain '{size_col}' and '{gap_col}'")
+    df[size_col] = pd.to_numeric(df[size_col], errors='coerce')
+    df[gap_col] = pd.to_numeric(df[gap_col], errors='coerce')
+    df = df.dropna(subset=[size_col, gap_col])
+    df = df[df[gap_col] > 0]
+    if df.empty:
+        raise RuntimeError("No positive gaps found")
+
+    df['_T'] = float(prefactor) / (df[gap_col].clip(lower=eps_gap) ** 2)
+    grouped = df.groupby(size_col)['_T']
+    sizes = np.array(sorted(grouped.groups.keys()))
+    if sizes.size < 2:
+        raise RuntimeError("Need at least two distinct sizes to produce the two-panel figure")
+
+    data_by_size = [grouped.get_group(s).values for s in sizes]
+    counts = np.array([len(v) for v in data_by_size])
+    medians = np.array([np.median(v) if len(v) else np.nan for v in data_by_size])
+    geo_means = np.array([np.exp(np.mean(np.log(v))) if len(v) else np.nan for v in data_by_size])
+    geo_std = np.array([np.exp(np.std(np.log(v))) if len(v) else np.nan for v in data_by_size])
+    lower_band = geo_means / geo_std
+    upper_band = geo_means * geo_std
+
+    def model(n, C, alpha, B):
+        return C * (2.0 ** (alpha * n)) + B
+
+    valid_mask = np.isfinite(geo_means) & (geo_means > 0)
+    if valid_mask.sum() < 2:
+        C_fit = np.nan; alpha_fit = np.nan; B_fit = np.nan; pcov = np.full((3,3), np.nan); r2 = np.nan
+    else:
+        B0 = max(0.0, 0.05 * np.nanmin(geo_means))
+        T_adj = geo_means - B0
+        if np.any(T_adj <= 0):
+            B0 = 0.0
+            T_adj = geo_means.copy()
+        log2T = np.log2(np.clip(T_adj[valid_mask], a_min=1e-30, a_max=None))
+        A = np.vstack([sizes[valid_mask], np.ones_like(sizes[valid_mask])]).T
+        sol, *_ = np.linalg.lstsq(A, log2T, rcond=None)
+        alpha0, log2C0 = float(sol[0]), float(sol[1])
+        C0 = max(1e-12, 2.0 ** log2C0)
+        p0 = [C0, alpha0, B0]
+        lower = [1e-30, -10.0, 0.0]
+        upper = [1e30, 10.0, np.nanmax(geo_means)]
+        try:
+            popt, pcov = curve_fit(model, sizes[valid_mask], geo_means[valid_mask],
+                                   p0=p0, bounds=(lower, upper), maxfev=200000)
+            C_fit, alpha_fit, B_fit = float(popt[0]), float(popt[1]), float(popt[2])
+        except Exception:
+            C_fit, alpha_fit, B_fit = C0, alpha0, B0
+            pcov = np.full((3,3), np.nan)
+
+        T_pred = model(sizes[valid_mask], C_fit, alpha_fit, B_fit)
+        ss_res = np.sum((geo_means[valid_mask] - T_pred) ** 2)
+        ss_tot = np.sum((geo_means[valid_mask] - np.mean(geo_means[valid_mask])) ** 2)
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+    n_plot = np.linspace(np.min(sizes), np.max(sizes), 300)
+    T_fit = model(n_plot, C_fit, alpha_fit, B_fit) if np.isfinite(C_fit) else np.full_like(n_plot, np.nan)
+
+    fig, (ax_box, ax_fit) = plt.subplots(1, 2, figsize=figsize, gridspec_kw={'width_ratios':[1,1.2]})
+    cmap = plt.get_cmap('Greys')
+    box_color = cmap(0.15)
+    edge_color = cmap(0.45)
+    positions = np.arange(len(sizes))
+
+    bp = ax_box.boxplot(
+        data_by_size,
+        positions=positions,
+        widths=0.65,
+        patch_artist=True,
+        showfliers=False,
+        medianprops=dict(color='white', linewidth=1.2),
+        boxprops=dict(facecolor=box_color, edgecolor=edge_color, linewidth=1.0),
+        whiskerprops=dict(color=edge_color, linewidth=0.9),
+        capprops=dict(color=edge_color, linewidth=0.9)
+    )
+    ax_box.plot(positions, geo_means, marker='D', color='C3', markersize=6, linestyle='-', linewidth=1.2, label='geometric mean')
+    ax_box.set_xticks(positions)
+    ax_box.set_xticklabels([str(int(s)) for s in sizes], fontsize=10)
+    ax_box.set_xlabel('Subset size (n)', fontsize=11)
+    ax_box.set_ylabel(f'Estimated adiabatic time', fontsize=11)
+    ax_box.set_yscale('log', base=log_base)
+
+    finite_vals = np.concatenate([v for v in data_by_size if len(v) > 0])
+
+    low_pct, high_pct = left_ylim_percentiles
+    clip_low = np.percentile(finite_vals, low_pct)
+    clip_high = np.percentile(finite_vals, high_pct)
+
+    whisker_lows = []
+    whisker_highs = []
+    for arr in data_by_size:
+        if len(arr) == 0:
+            continue
+        q1 = np.percentile(arr, 25)
+        q3 = np.percentile(arr, 75)
+        iqr = q3 - q1
+        wl = np.min(arr[arr >= (q1 - 1.5 * iqr)]) if np.any(arr >= (q1 - 1.5 * iqr)) else np.min(arr)
+        wh = np.max(arr[arr <= (q3 + 1.5 * iqr)]) if np.any(arr <= (q3 + 1.5 * iqr)) else np.max(arr)
+        whisker_lows.append(wl)
+        whisker_highs.append(wh)
+    if whisker_lows:
+        min_whisker = float(np.min(whisker_lows))
+        max_whisker = float(np.max(whisker_highs))
+    else:
+        min_whisker = float(np.min(finite_vals))
+        max_whisker = float(np.max(finite_vals))
+
+    clip_low = min(clip_low, np.nanmin(np.concatenate([medians[~np.isnan(medians)], geo_means[~np.isnan(geo_means)]])))
+    clip_high = max(clip_high, np.nanmax(np.concatenate([medians[~np.isnan(medians)], geo_means[~np.isnan(geo_means)]])))
+
+    pad_factor = 0.12
+    y_low = max(1e-300, min(min_whisker, clip_low) * (1.0 - pad_factor))
+    y_high = max(max_whisker, clip_high) * (1.0 + pad_factor)
+    ax_box.set_ylim(y_low, y_high)
+
+    exp_min = int(np.floor(np.log(y_low) / np.log(log_base)))
+    exp_max = int(np.ceil(np.log(y_high) / np.log(log_base)))
+    ticks = (log_base ** np.arange(exp_min, exp_max + 1))
+    ax_box.set_yticks(ticks)
+    ax_box.yaxis.set_major_formatter(LogFormatterMathtext(base=log_base))
+    ax_box.grid(axis='y', linestyle='--', alpha=0.25)
+    ax_box.legend(frameon=False, fontsize=9)
+
+    ax_fit.plot(sizes, geo_means, marker='o', color='C0', markersize=6, label='geometric mean')
+    ax_fit.fill_between(sizes, lower_band, upper_band, color='C0', alpha=0.18, label='geom. std')
+    ax_fit.plot(n_plot, T_fit, color='k', lw=2.0, label=f'Fit: $C\\,2^{{\\alpha n}}+B$')
+    ax_fit.set_xlabel('Subset size (n)', fontsize=11)
+    ax_fit.set_yscale('log', base=log_base)
+    ax_fit.set_xticks(sizes)
+    ax_fit.set_xticklabels([str(int(s)) for s in sizes], fontsize=10)
+    ax_fit.grid(axis='y', linestyle='--', alpha=0.25)
+
+    txt = f"C={C_fit:.3g}\n$\\alpha$={alpha_fit:.4g}\nB={B_fit:.3g}\n$R^2$={r2:.3f}"
+    ax_fit.annotate(txt, xy=(0.98, 0.05), xycoords='axes fraction', ha='right', va='bottom',
+                    fontsize=9, bbox=dict(facecolor='white', edgecolor='black', linewidth=0.8, pad=4, alpha=0.9))
+    ax_fit.legend(frameon=False, fontsize=9)
+
+    plt.tight_layout()
+    meta = {
+        'sizes': sizes,
+        'counts': counts,
+        'medians': medians,
+        'geo_means': geo_means,
+        'geo_std': geo_std,
+        'fit': {'C': C_fit, 'alpha': alpha_fit, 'B': B_fit, 'cov': pcov, 'r2': r2}
+    }
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    return fig, (ax_box, ax_fit), meta

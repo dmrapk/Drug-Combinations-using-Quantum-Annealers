@@ -65,7 +65,7 @@ def find_best_qubo_for_params_ap_enumeration(
                 total_candidates += comb(n, k)
         # safety cap warning is set to 1e6 candidate combos
         if total_candidates > 1000000:
-            print(f"[INFO] enumeration candidate count {total_candidates} too large, fallback to sampling")
+            print(f"[INFO] enumeration candidate count {total_candidates} too large")
 
         try:
             ap = compute_average_precision_allowed_sizes(
