@@ -8,6 +8,7 @@ venv/
 .ipynb_checkpoints/
 
 Datasets/*
-!Datasets/.gitkeep
+!Datasets/
+!Datasets/disease_drug_combinations.tsv
 
 .vscode/
