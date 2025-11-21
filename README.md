@@ -1,6 +1,6 @@
 # Drug-Combinations-using-Quantum-Annealers
 
-**Network-based prediction of drug combinations with quantum annealing** — code and notebooks accompanying the manuscript. The paper PDF is included with this repository: `/mnt/data/main.pdf`.
+**Network-based prediction of drug combinations with quantum annealing** — code and notebooks accompanying the manuscript.
 
 This repository implements the pipeline described in the manuscript to (1) compute network proximity and separation metrics on a human interactome, (2) encode the Complementary Exposure principle as a QUBO (quadratic unconstrained binary optimization), and (3) search low-energy solutions with simulated quantum annealing (SQA) to prioritise candidate drug combinations.
 
