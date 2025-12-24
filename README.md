@@ -22,7 +22,7 @@ This repository implements the pipeline described in the manuscript to (1) compu
 
 ---
 
-# Quickstart (one-minute checklist)
+# Quickstart
 
 1. Clone the repo:
 ```bash
@@ -89,11 +89,14 @@ dwave-ocean-sdk   # optional: for D-Wave / SQA utilities
 If you use this repository or the accompanying code in your work, please cite the manuscript.
 
 ```bibtex
-@article{ramos2025network,
-  title = {Network-based prediction of drug combinations with quantum annealing},
-  author = {Ramos, Diogo and Coutinho, Bruno and Magano, Duarte},
-  year = {2025},
-  note = {Accompanying repository: https://github.com/dmrapk/Drug-Combinations-using-Quantum-Annealers}
+@article{ramos2025networkbasedpredictiondrugcombinations,
+      title={Network-based prediction of drug combinations with quantum annealing}, 
+      author={Diogo Ramos and Bruno Coutinho and Duarte Magano},
+      year={2025},
+      eprint={2512.20199},
+      archivePrefix={arXiv},
+      primaryClass={quant-ph},
+      url={https://arxiv.org/abs/2512.20199}, 
 }
 ```
 
