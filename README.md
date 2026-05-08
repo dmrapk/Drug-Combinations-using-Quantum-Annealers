@@ -1,95 +1,81 @@
-# Drug-Combinations-using-Quantum-Annealers
+# Network-based prediction of drug combinations with quantum annealing
 
-**Network-based prediction of drug combinations with quantum annealing** — code and notebooks accompanying the manuscript.
+Code and data accompanying the paper:
 
-**Diogo Ramos, Bruno Coutinho, Duarte Magano** 
+> **Network-based prediction of drug combinations with quantum annealing**
+> Diogo Ramos, Bruno Coutinho, Duarte Magano
+> *arXiv:2512.20199* (December 2025) · [PDF](https://arxiv.org/pdf/2512.20199) · [HTML](https://arxiv.org/html/2512.20199)
 
-This repository implements the pipeline described in the manuscript to (1) compute network proximity and separation metrics on a human interactome, (2) encode the Complementary Exposure principle as a QUBO (quadratic unconstrained binary optimization), and (3) search low-energy solutions with simulated quantum annealing (SQA) to prioritise candidate drug combinations.
+This repository implements a quantum-annealing algorithm that predicts effective drug combinations for a given disease by encoding the **Complementary Exposure principle** (which points to therapeutic combinations targetting distinct but complementary regions of a disease's protein-protein interaction (PPI) module) as a Quadratic Unconstrained Binary Optimization (QUBO) problem. 
 
----
 
-# Contents
+## Contents
 
-- `Results.ipynb` — main analysis notebook that reproduces figures and tables from the paper.  
-- `dataset_utils.py` — load / preprocess interactome, drug-target and disease-gene files.  
-- `distance_metrics.py` — distance and network proximity metrics.  
-- `parameter_optimization.py` — grid search over hyperparameters and Average Precision evaluation.  
-- `qubo_selection.py` — QUBO construction (objective + penalties).   
-- `simulated_quantum_annealing.py` — wrapper for SQA sampling / postprocessing.  
-- `Datasets/` — place dataset CSVs here (interactome, drug-targets, disease-genes, known combinations).  
-- `Results/`, `Images/` — outputs produced by the notebook and scripts.  
-- `README.md` — this file.  
+```
+.
+├── Datasets/                       # Input data (see "Datasets" below)
+├── Results/                        # Generated artifacts: QUBOs, pickles, CSVs
+├── Images/                         # Figures produced by the notebook
+│
+├── Results.ipynb                   # End-to-end reproduction notebook
+│
+├── dataset_utils.py                # Interactome loading, disease/drug dicts
+├── distance_metrics.py             # APSP precomputation, z-scores, s-matrix
+├── parameter_optimization.py       # QUBO construction, hyperparameter tuning, Precision, Recall and AP
+├── qubo_selection.py               # Best-QUBO selection
+├── simulated_quantum_annealing.py  # SQA sampling and postprocessing
+├── sa_sqa_comparison.py            # SA vs SQA benchmarks (sweeps and scaling)
+└── predictions.py                  # Top predictions and PubMed queries
+```
 
----
+## Datasets
 
-# Quickstart
+| File | Description |
+|------|-------------|
+| `interactome.txt` | Human protein–protein interaction edge list |
+| `disease_targets.tsv` | Disease → associated proteins |
+| `drug_targets.txt` | Drug → protein targets (DrugBank IDs) |
+| `disease_drug_combinations.csv` | Validated disease–combination pairs | (provided in the Datasets/ folder)
 
-1. Clone the repo:
+The code relies on several public resources for the interactome, drug targets and disease proteins whose sources are cited in Appendix A of the manuscript.
+
+The validated combination dataset was constructed by intersecting the **Continuous Drug Combination Database (CDCB)** with the drug-disease associations of **Guney et al.**, retaining only pairs where every drug in the combination is independently associated with the disease (see Appendix A). The final benchmark spans **35 diseases**, **136 unique drugs**, and **287 disease-combination pairs** (234 doublets, 40 triplets, 13 quadruplets+).
+
+## Installation
+
+Python ≥ 3.10 is required. The project depends on the D-Wave Ocean SDK for both samplers:
+
 ```bash
+# Clone
 git clone https://github.com/dmrapk/Drug-Combinations-using-Quantum-Annealers.git
 cd Drug-Combinations-using-Quantum-Annealers
-```
 
-2. Create and activate a Python environment:
-```bash
+# Create environment
 python -m venv .venv
-# macOS / Linux
-source .venv/bin/activate
-# Windows (PowerShell)
-# .venv\Scripts\Activate.ps1
-pip install --upgrade pip
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-3. Install dependencies (example):
-```bash
-pip install numpy scipy pandas networkx matplotlib scikit-learn jupyterlab
-pip install dwave-ocean-sdk      # optional: only if you want D-Wave Ocean SQA utilities
-```
-
-4. Open the main notebook:
-```bash
-jupyter lab Results.ipynb
-```
-
-# Data
-
-- **Interactome**: CSV edge list `node_a,node_b` (genes/proteins using consistent IDs).  
-- **Drug–target**: CSV `drug_id,target_gene` (one row per drug–target pair).  
-- **Disease–gene**: CSV `disease,gene` or a disease-specific gene list.  
-- **Disease-drug-combinations** (ground-truth benchmark): CSV `disease,drug-combination`. This is provided on the Datasets folder.
-
-Check `dataset_utils.py` comments for exact column names expected by the notebook and scripts.
-The manuscript and code rely on several public resources for the interactome, drug targets, and disease genes.
-The origins of the missing datasets are documented in the relevant Datasets section of the article.
-
----
-
-# Notes on quantum annealing and SQA
-
-- The code is written to run with *simulated quantum annealing* (SQA) for reproducibility. If you have access to physical quantum annealers, you can adapt the sampler wrapper in `simulated_quantum_annealing.py` to submit the QUBO to hardware.  
-- Results are hypothesis-generating; biological and pharmacological validation is required before any experimental or clinical use.
-
-# Dependencies
+## Install dependencies
 
 ```
-numpy
-scipy
-pandas
-networkx
-scikit-learn
-matplotlib
-jupyterlab
-dwave-ocean-sdk   # optional: for D-Wave / SQA utilities
+pip install numpy pandas scipy matplotlib networkx dimod dwave-samplers requests jupyter
 ```
 
----
+Required packages:
+- `numpy`, `pandas`, `scipy`, `matplotlib`, `networkx`, `scikit-learn` — numerical and graph utilities
+- `dimod`, `dwave-samplers` — D-Wave Ocean SDK (SA and Path Integral SQA samplers)
+- `requests` — Queries for the prediction table with number of PubMed hits
+- `jupyter` 
 
-# Citation
+## Citation
 
-If you use this repository or the accompanying code in your work, please cite the manuscript.
+If you use this code or the validated combinations dataset, please cite:
 
 ```bibtex
-@article{ramos2025networkbasedpredictiondrugcombinations,
+@misc{ramos2025networkbasedpredictiondrugcombinations,
       title={Network-based prediction of drug combinations with quantum annealing}, 
       author={Diogo Ramos and Bruno Coutinho and Duarte Magano},
       year={2025},
@@ -99,7 +85,3 @@ If you use this repository or the accompanying code in your work, please cite th
       url={https://arxiv.org/abs/2512.20199}, 
 }
 ```
-
-# Final note
-
-This project is a computational pipeline for prioritising drug-combination hypotheses using network science and quantum annealing-inspired optimisation.
