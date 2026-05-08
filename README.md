@@ -54,10 +54,6 @@ cd Drug-Combinations-using-Quantum-Annealers
 python -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
-```
-
 ## Install dependencies
 
 ```
