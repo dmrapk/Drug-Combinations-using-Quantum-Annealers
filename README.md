@@ -68,7 +68,7 @@ Required packages:
 
 ## Citation
 
-If you use this code or the validated combinations dataset, please cite:
+If you use this code, validated combinations dataset or resulting predictions from the algorithm, please cite:
 
 ```bibtex
 @misc{ramos2025networkbasedpredictiondrugcombinations,
