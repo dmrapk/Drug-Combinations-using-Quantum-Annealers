@@ -1,0 +1,81 @@
+Disease,Rank,Drug A,Drug B,PubMed Hits
+Diabetes Mellitus,1,Metformin,Irbesartan,484
+Diabetes Mellitus,2,Metformin,DB03490 (Experimental),0
+Diabetes Mellitus,3,Metformin,DB08126 (Experimental),0
+Diabetes Mellitus,4,Rosiglitazone,Sitagliptin,1371
+Diabetes Mellitus,5,Metformin,Fisetin,393
+Diabetes Mellitus,6,Metformin,DB04719 (Experimental),0
+Diabetes Mellitus,7,Metformin,Rizatriptan,43
+Diabetes Mellitus,8,Metformin,DB01496 (Experimental),0
+Diabetes Mellitus,9,Metformin,DB08403 (Experimental),0
+Diabetes Mellitus,10,Metformin,Bopindolol,25
+Diabetes Mellitus,11,Metformin,Db03448,0
+Diabetes Mellitus,12,Metformin,Megestrol Acetate,148
+Diabetes Mellitus,13,Orlistat,Sitagliptin,271
+Diabetes Mellitus,14,Sitagliptin,Db02639,0
+Diabetes Mellitus,15,Metformin,Icatibant,36
+Diabetes Mellitus,16,Aspartic Acid,Metformin,514
+Diabetes Mellitus,17,Metformin,Pirbuterol,5
+Diabetes Mellitus,18,Isoetharine,Metformin,1
+Diabetes Mellitus,19,Db00054,Metformin,1
+Diabetes Mellitus,20,Metformin,Xylometazoline,9
+Rheumatoid Arthritis,1,Methotrexate,Thalidomide,790
+Rheumatoid Arthritis,2,Methotrexate,Hydrocortisone,789
+Rheumatoid Arthritis,3,Adalimumab,Methotrexate,6929
+Rheumatoid Arthritis,4,Methotrexate,DB02482 (Experimental),0
+Rheumatoid Arthritis,5,Indomethacin,Methotrexate,794
+Rheumatoid Arthritis,6,Methotrexate,Chloroquine,1398
+Rheumatoid Arthritis,7,Metolazone,Hydroxychloroquine,12
+Rheumatoid Arthritis,8,Mefloquine,Methotrexate,106
+Rheumatoid Arthritis,9,Hydroxychloroquine,Fospropofol,0
+Rheumatoid Arthritis,10,Methotrexate,Auranofin,343
+Rheumatoid Arthritis,11,Metolazone,Methotrexate,21
+Rheumatoid Arthritis,12,Methotrexate,Fospropofol,1
+Rheumatoid Arthritis,13,Prednisolone,Auranofin,118
+Rheumatoid Arthritis,14,Methotrexate,Db08025,0
+Rheumatoid Arthritis,15,Methotrexate,Coumaric Acid,66
+Rheumatoid Arthritis,16,Methotrexate,Palmitic Acid,209
+Rheumatoid Arthritis,17,Prednisolone,Thalidomide,482
+Rheumatoid Arthritis,18,Hydroxychloroquine,Db01958,0
+Rheumatoid Arthritis,19,Methotrexate,Tamsulosin,54
+Rheumatoid Arthritis,20,Thalidomide,Hydroxychloroquine,459
+Asthma,1,Fluticasone Propionate,Prednisolone,613
+Asthma,2,Prednisone,DB08465 (Experimental),0
+Asthma,3,Fluticasone Propionate,Arformoterol,31
+Asthma,4,Prednisolone,Arformoterol,18
+Asthma,5,Prednisone,Tiotropium,377
+Asthma,6,Cetrorelix,Prednisone,6
+Asthma,7,Prednisone,Arformoterol,23
+Asthma,8,Prednisolone,Chloroxine,0
+Asthma,9,Prednisolone,DB08465 (Experimental),0
+Asthma,10,Labetalol,Prednisone,84
+Asthma,11,Fluticasone Propionate,Hydrocortisone,297
+Asthma,12,Fluticasone Propionate,DB08465 (Experimental),0
+Asthma,13,Labetalol,Prednisolone,106
+Asthma,14,Cetrorelix,Prednisolone,6
+Asthma,15,Hydrocortisone,Tiotropium,95
+Asthma,16,Prednisone,Isoproterenol,145
+Asthma,17,Prednisone,Db08124,0
+Asthma,18,Prednisone,Galantamine,31
+Asthma,19,Fluticasone Propionate,Labetalol,9
+Asthma,20,Cetrorelix,Fluticasone Propionate,3
+Brain Neoplasms,1,Vinorelbine,Epirubicin,21
+Brain Neoplasms,2,Vinorelbine,Tamoxifen,35
+Brain Neoplasms,3,Medroxyprogesterone Acetate,Capecitabine,0
+Brain Neoplasms,4,Capecitabine,Amobarbital,0
+Brain Neoplasms,5,Epirubicin,Capecitabine,20
+Brain Neoplasms,6,Tamoxifen,Capecitabine,44
+Brain Neoplasms,7,Vinorelbine,Medroxyprogesterone Acetate,0
+Brain Neoplasms,8,Vinorelbine,Amobarbital,1
+Brain Neoplasms,9,Vinorelbine,Z-Pro-Prolinal,0
+Brain Neoplasms,10,Capecitabine,Halothane,0
+Brain Neoplasms,11,Capecitabine,4-Guanidino-Benzoic Acid,0
+Brain Neoplasms,12,Capecitabine,Bifonazole,0
+Brain Neoplasms,13,Vinorelbine,Estradiol,8
+Brain Neoplasms,14,Capecitabine,Db07790,0
+Brain Neoplasms,15,Isoproterenol,Capecitabine,0
+Brain Neoplasms,16,Vinorelbine,Db08429,0
+Brain Neoplasms,17,Labetalol,Capecitabine,0
+Brain Neoplasms,18,Vinorelbine,Etoricoxib,0
+Brain Neoplasms,19,Epirubicin,Letrozole,5
+Brain Neoplasms,20,Capecitabine,DB01287 (Unmapped),0

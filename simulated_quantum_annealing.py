@@ -232,7 +232,7 @@ def parameter_exploration(
 
     custom_params_space = []
     for bh in [3.0]:
-        for n_steps in [20001]: 
+        for n_steps in [10001]: #20001
             for alpha in [1.5]: 
                 for gm in [1.0]:
                     custom_params_space.append({"beta_min": beta_low, "beta_max": bh, "n_steps": n_steps, "alpha": alpha, "Gamma": gm, "num_reads": base_num_reads, "num_sweeps": None, "num_sweeps_per_beta": 2})

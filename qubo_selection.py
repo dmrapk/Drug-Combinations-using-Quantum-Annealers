@@ -3,11 +3,14 @@ from typing import List, Tuple, Dict, Any, Optional, Set, FrozenSet, Any
 import dimod
 import numpy as np
 import itertools
+import pandas as pd
+import os
 from dimod import SimulatedAnnealingSampler
 from distance_metrics import analyze_disease_with_padding
 from parameter_optimization import create_qubo
 from math import comb
 import matplotlib.pyplot as plt
+from parameter_optimization import load_qubo_from_file
 
 def find_best_qubo_for_params_ap_enumeration(
     disease_name: str,
@@ -220,3 +223,120 @@ def get_sorted_results_allowed_sizes(
 
     results.sort(key=lambda t: t[1])
     return results
+
+RCPARAMS = {
+    "font.family": "sans-serif",
+    "font.size": 12,
+    "axes.titlesize": 14,
+    "axes.labelsize": 13,
+    "legend.fontsize": 11,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "figure.dpi": 300,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+}
+
+def compute_analysis_data(
+    disease_name: str,
+    df,
+    interactome_graph,
+    filtered_disease_dict: dict,
+    drug_to_targets: dict,
+    dist_matrix: np.ndarray,
+    nodes: list,
+    node_to_idx: dict,
+    initial_drug_ids: List[str],
+    num_qubits: int,
+    num_samples: int = 10000,
+) -> Tuple[str, Dict[str, float], np.ndarray, List[str]]:
+    """
+    Wrapper around analyze_disease_with_padding that returns
+    (disease_name, z_dict, s_matrix, drug_ids).
+    """
+    return analyze_disease_with_padding(
+        disease_name=disease_name,
+        df=df,
+        interactome_graph=interactome_graph,
+        filtered_disease_dict=filtered_disease_dict,
+        drug_to_targets=drug_to_targets,
+        dist_matrix=dist_matrix,
+        nodes=nodes,
+        node_to_idx=node_to_idx,
+        initial_drug_ids=initial_drug_ids,
+        num_qubits=num_qubits,
+        num_samples=num_samples,
+    )
+
+def plot_multi_disease_distributions(
+    disease_data: Dict[str, Tuple[Dict[str, float], np.ndarray, List[str]]],
+    figsize: Tuple = (16, 7.0),
+    bins: int = 25,
+    save_path: Optional[str] = None,
+) -> plt.Figure:
+    """
+    z-score and s histograms
+    """
+    plt.rcParams.update(RCPARAMS)
+
+    diseases = list(disease_data.keys())
+    n_diseases = len(diseases)
+
+    fig, axes = plt.subplots(
+        2,
+        n_diseases,
+        figsize=figsize,
+        constrained_layout=True,
+        sharex=False,
+    )
+
+    if n_diseases == 1:
+        axes = axes.reshape(2, 1)
+
+    for col, dname in enumerate(diseases):
+        z_dict, s_matrix, drug_ids = disease_data[dname]
+        n = len(drug_ids)
+
+        z_vals = np.array([z_dict[did] for did in drug_ids])
+        rows_idx, cols_idx = np.triu_indices(n, k=1)
+        s_vals = s_matrix[rows_idx, cols_idx]
+
+        ax_z = axes[0, col]
+        ax_z.hist(
+            z_vals,
+            bins=bins,
+            color="#4C72B0",
+            edgecolor="white",
+            linewidth=0.5,
+            alpha=0.85,
+        )
+        ax_z.axvline(x=0, color="black", linestyle="--", linewidth=1.0, alpha=0.7)
+        ax_z.set_title(dname, fontsize=14, pad=8)
+        ax_z.set_xlabel(r"$z(Y, X_i)$", fontsize=13, labelpad=4)
+        if col == 0:
+            ax_z.set_ylabel("Count", fontsize=13)
+        ax_z.tick_params(axis="both", labelsize=11)
+        ax_z.spines["top"].set_visible(False)
+        ax_z.spines["right"].set_visible(False)
+
+        ax_s = axes[1, col]
+        ax_s.hist(
+            s_vals,
+            bins=bins,
+            color="#DD8452",
+            edgecolor="white",
+            linewidth=0.5,
+            alpha=0.85,
+        )
+        ax_s.axvline(x=0, color="black", linestyle="--", linewidth=1.0, alpha=0.7)
+        ax_s.set_xlabel(r"$s(X_i, X_j)$", fontsize=13, labelpad=4)
+        if col == 0:
+            ax_s.set_ylabel("Count", fontsize=13)
+        ax_s.tick_params(axis="both", labelsize=11)
+        ax_s.spines["top"].set_visible(False)
+        ax_s.spines["right"].set_visible(False)
+
+    if save_path:
+        fig.savefig(save_path, format="pdf", bbox_inches="tight")
+
+    return fig
