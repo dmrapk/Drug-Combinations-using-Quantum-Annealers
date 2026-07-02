@@ -4,7 +4,7 @@ Code and data accompanying the paper:
 
 > **Network-based prediction of drug combinations with quantum annealing**
 > Diogo Ramos, Bruno Coutinho, Duarte Magano
-> *Quantum Machine Intelligence* **8**, Article 70 (2026) · https://doi.org/10.1007/s42484-026-00411-7 · [Publisher Version](https://link.springer.com/article/10.1007/s42484-026-00411-7) · [arXiv](https://arxiv.org/abs/2512.20199)
+> *Quantum Machine Intelligence* **8**, Article 70 (2026) · https://doi.org/10.1007/s42484-026-00411-7 
 
 This repository implements a quantum-annealing algorithm that predicts effective drug combinations for a given disease by encoding the **Complementary Exposure principle** (which points to therapeutic combinations targetting distinct but complementary regions of a disease's protein-protein interaction (PPI) module) as a Quadratic Unconstrained Binary Optimization (QUBO) problem. 
 
