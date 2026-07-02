@@ -4,7 +4,7 @@ Code and data accompanying the paper:
 
 > **Network-based prediction of drug combinations with quantum annealing**
 > Diogo Ramos, Bruno Coutinho, Duarte Magano
-> *arXiv:2512.20199* (December 2025) · [PDF](https://arxiv.org/pdf/2512.20199) · [HTML](https://arxiv.org/html/2512.20199)
+> *Quantum Machine Intelligence* **8**, Article 70 (2026) · https://doi.org/10.1007/s42484-026-00411-7 · [Publisher Version](https://link.springer.com/article/10.1007/s42484-026-00411-7) · [arXiv](https://arxiv.org/abs/2512.20199)
 
 This repository implements a quantum-annealing algorithm that predicts effective drug combinations for a given disease by encoding the **Complementary Exposure principle** (which points to therapeutic combinations targetting distinct but complementary regions of a disease's protein-protein interaction (PPI) module) as a Quadratic Unconstrained Binary Optimization (QUBO) problem. 
 
@@ -71,13 +71,13 @@ Required packages:
 If you use this code, validated combinations dataset or resulting predictions from the algorithm, please cite:
 
 ```bibtex
-@misc{ramos2025networkbasedpredictiondrugcombinations,
-      title={Network-based prediction of drug combinations with quantum annealing}, 
-      author={Diogo Ramos and Bruno Coutinho and Duarte Magano},
-      year={2025},
-      eprint={2512.20199},
-      archivePrefix={arXiv},
-      primaryClass={quant-ph},
-      url={https://arxiv.org/abs/2512.20199}, 
-}
+@article{Ramos2026DrugCombinationsQA, 
+author = {Ramos, Diogo and Coutinho, Bruno and Magano, Duarte},
+title = {Network-based prediction of drug combinations with quantum annealing},
+journal = {Quantum Machine Intelligence}, 
+volume = {8},
+pages = {70},
+year = {2026},
+doi = {10.1007/s42484-026-00411-7}, 
+publisher = {Springer Nature} }
 ```
